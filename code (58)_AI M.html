@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Integrated Trading Signal Generator & Scanner</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            --panel-bg-color: rgba(31, 31, 56, 0.85);
+            --text-color: #e0e0e0;
+            --text-muted-color: #a0a0b0;
+            --border-color: #3a3a5a;
+            --accent-gradient: linear-gradient(135deg, #3a7bd5, #3a6073);
+            --shadow-color: rgba(0, 0, 0, 0.5);
+            --buy-color: #4CAF50;
+            --sell-color: #f44336;
+            --neutral-color: #ffc107;
+            --error-bg: rgba(244, 67, 54, 0.15);
+            --error-border: #f44336;
+            --error-text: #fdd8d6;
+            --success-bg: rgba(76, 175, 80, 0.15);
+            --success-border: #4CAF50;
+            --success-text: #d4edda;
+            --input-bg: #2a2a4a;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-gradient); min-height: 100vh; color: var(--text-color); }
+        .container { max-width: 1800px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; margin-bottom: 30px; color: white; }
+        .header h1 { font-size: 2.5rem; margin-bottom: 10px; text-shadow: 2px 2px 4px var(--shadow-color); display: flex; align-items: center; justify-content: center; }
+        .header p { font-size: 1.1rem; opacity: 0.9; }
+        .dashboard { display: grid; grid-template-columns: 1fr; gap: 20px; margin-bottom: 30px; }
+        .control-panel, .scanner-panel, .chart-container, .signals-panel {
+            background: var(--panel-bg-color); border-radius: 15px; padding: 25px; box-shadow: 0 10px 30px var(--shadow-color);
+            backdrop-filter: blur(10px); border: 1px solid var(--border-color); display: flex; flex-direction: column;
+        }
+        .chart-container { position: relative; height: 600px; max-height: 75vh; }
+        @media (min-width: 1200px) {
+            .dashboard { grid-template-columns: 1fr 1fr; }
+            .chart-container { grid-column: 1 / -1; }
+        }
+        @media (max-width: 600px) {
+            .container { padding: 10px; }
+            .header h1 { font-size: 2rem; }
+        }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; font-weight: 600; margin-bottom: 8px; color: var(--text-muted-color); }
+        .form-group select, .form-group input { width: 100%; padding: 12px; background-color: var(--input-bg); color: var(--text-color); border: 2px solid var(--border-color); border-radius: 8px; font-size: 14px; transition: all 0.3s ease; }
+        .form-group select:focus, .form-group input:focus { outline: none; border-color: #3a7bd5; box-shadow: 0 0 0 3px rgba(58, 123, 213, 0.2); }
+        .btn { background: var(--accent-gradient); color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; width: 100%; margin-top: auto; }
+        .btn:disabled { background: #555; color: #999; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(58, 123, 213, 0.2); }
+        .signal-card { background: var(--input-bg); border-radius: 12px; padding: 20px; margin-bottom: 15px; border-left: 5px solid #3a7bd5; transition: all 0.3s ease; }
+        .signal-card.buy { border-left-color: var(--buy-color); background: var(--success-bg); }
+        .signal-card.sell { border-left-color: var(--sell-color); background: var(--error-bg); }
+        .signal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .signal-header > div { display: flex; gap: 8px; align-items: center; } /* For aligning tags */
+        .signal-type { font-weight: 700; font-size: 1.2rem; text-transform: uppercase; }
+        .signal-details { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem; }
+        .detail-item { display: flex; justify-content: space-between; }
+        .detail-label { font-weight: 600; color: var(--text-muted-color); }
+        .detail-value { font-weight: 700; color: var(--text-color); }
+        .loading, .info-message { text-align: center; padding: 40px; color: var(--text-muted-color); width: 100%; }
+        .loading::after { content: ''; display: inline-block; width: 20px; height: 20px; border: 3px solid #3a7bd5; border-radius: 50%; border-top-color: transparent; animation: spin 1s ease-in-out infinite; margin-left: 10px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error { background: var(--error-bg); color: var(--error-text); padding: 15px; border-radius: 8px; margin: 10px 0; border: 1px solid var(--error-border); }
+        .success { background: var(--success-bg); color: var(--success-text); padding: 15px; border-radius: 8px; margin: 10px 0; border: 1px solid var(--success-border); }
+        h2 { display: flex; align-items: center; }
+        .me-2 { margin-right: 0.75rem; }
+        .table-responsive { overflow-x: auto; flex-grow: 1; }
+        .table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .table th, .table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+        .table th { color: var(--text-muted-color); text-transform: uppercase; font-size: 0.85rem; }
+        .table tbody tr { transition: background-color 0.2s ease; }
+        .table tbody tr:hover { background-color: #313152; }
+        .badge { display: inline-block; padding: 0.35em 0.65em; font-size: .75em; font-weight: 700; line-height: 1; text-align: center; white-space: nowrap; vertical-align: baseline; border-radius: 0.375rem; color: #fff; }
+        .bg-buy { background-color: var(--buy-color); }
+        .bg-sell { background-color: var(--sell-color); }
+        .bg-neutral { background-color: var(--neutral-color); }
+        .bg-secondary { background-color: #6c757d; }
+        .btn-action { background: none; border: 1px solid var(--border-color); color: var(--text-color); padding: 5px 10px; border-radius: 5px; cursor: pointer; transition: all 0.2s ease; }
+        .btn-action:hover { background-color: #3a7bd5; border-color: #3a7bd5; color: #fff; }
+        .scanner-strategy-tag {
+            background-color: rgba(0, 0, 0, 0.3); padding: 0.2em 0.6em; border-radius: 0.375rem;
+            font-size: 0.75em; font-weight: 700; color: var(--text-muted-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-chart-line me-2"></i>Integrated Trading Signal Generator & Scanner</h1>
+            <p>Dual-strategy analysis for Zone Breakouts and Shifted Zones (Powered by yfinance)</p>
+        </div>
+
+        <div class="dashboard">
+            <div class="control-panel">
+                <h2><i class="fas fa-cogs me-2"></i>Trading Parameters</h2>
+                <div class="form-group">
+                    <label for="assetType">Asset Type</label>
+                    <select id="assetType">
+                        <option value="STOCKS" selected>Stocks</option>
+                        <option value="FOREX">Forex</option>
+                        <option value="CRYPTO">Cryptocurrency</option>
+                        <option value="COMMODITIES">Commodities</option>
+                        <option value="CUSTOM">Custom Symbol</option>
+                    </select>
+                </div>
+                 <div class="form-group" id="stockSymbolContainer">
+                    <label for="stockSymbol">Stock Symbol</label>
+                    <select id="stockSymbol">
+                        <option value="AAPL">Apple (AAPL)</option>
+                        <option value="MSFT">Microsoft (MSFT)</option>
+                        <option value="GOOGL">Alphabet (GOOGL)</option>
+                        <option value="AMZN">Amazon (AMZN)</option>
+                        <option value="NVDA">NVIDIA (NVDA)</option>
+                        <option value="TSLA">Tesla (TSLA)</option>
+                        <option value="META">Meta Platforms (META)</option>
+                        <option value="JPM">JPMorgan Chase (JPM)</option>
+                        <option value="JNJ">Johnson & Johnson (JNJ)</option>
+                        <option value="V">Visa (V)</option>
+                        <option value="PG">Procter & Gamble (PG)</option>
+                        <option value="MA">Mastercard (MA)</option>
+                        <option value="UNH">UnitedHealth (UNH)</option>
+                        <option value="HD">Home Depot (HD)</option>
+                        <option value="BAC">Bank of America (BAC)</option>
+                        <option value="XOM">Exxon Mobil (XOM)</option>
+                        <option value="CVX">Chevron (CVX)</option>
+                        <option value="PFE">Pfizer (PFE)</option>
+                        <option value="KO">Coca-Cola (KO)</option>
+                        <option value="PEP">PepsiCo (PEP)</option>
+                        <option value="WMT">Walmart (WMT)</option>
+                        <option value="MCD">McDonald's (MCD)</option>
+                    </select>
+                </div>
+                <div class="form-group" id="forexSymbolContainer" style="display: none;">
+                    <label for="forexSymbol">Forex Pair</label>
+                    <select id="forexSymbol">
+                        <optgroup label="Majors">
+                            <option value="EURUSD=X">EUR/USD</option>
+                            <option value="GBPUSD=X">GBP/USD</option>
+                            <option value="USDJPY=X">USD/JPY</option>
+                            <option value="AUDUSD=X">AUD/USD</option>
+                            <option value="USDCAD=X">USD/CAD</option>
+                            <option value="USDCHF=X">USD/CHF</option>
+                            <option value="NZDUSD=X">NZD/USD</option>
+                        </optgroup>
+                        <optgroup label="Minors">
+                            <option value="USDSGD=X">USD/SGD</option>
+                            <option value="USDHKD=X">USD/HKD</option>
+                            <option value="USDNOK=X">USD/NOK</option>
+                            <option value="USDSEK=X">USD/SEK</option>
+                            <option value="USDPLN=X">USD/PLN</option>
+                            <option value="USDDKK=X">USD/DKK</option>
+                            <option value="USDCZK=X">USD/CZK</option>
+                            <option value="USDHUF=X">USD/HUF</option>
+                            <option value="USDTRY=X">USD/TRY</option>
+                            <option value="USDRUB=X">USD/RUB</option>
+                            <option value="USDCNY=X">USD/CNY</option>
+                            <option value="USDINR=X">USD/INR</option>
+                            <option value="USDKRW=X">USD/KRW</option>
+                            <option value="USDTHB=X">USD/THB</option>
+                            <option value="USDMXN=X">USD/MXN</option>
+                            <option value="USDBRL=X">USD/BRL</option>
+                            <option value="USDZAR=X">USD/ZAR</option>
+                        </optgroup>
+                        <optgroup label="Cross Pairs">
+                            <option value="EURJPY=X">EUR/JPY</option>
+                            <option value="GBPJPY=X">GBP/JPY</option>
+                            <option value="EURGBP=X">EUR/GBP</option>
+                            <option value="EURCHF=X">EUR/CHF</option>
+                            <option value="EURAUD=X">EUR/AUD</option>
+                            <option value="EURCAD=X">EUR/CAD</option>
+                            <option value="EURNZD=X">EUR/NZD</option>
+                            <option value="GBPAUD=X">GBP/AUD</option>
+                            <option value="GBPCAD=X">GBP/CAD</option>
+                            <option value="GBPCHF=X">GBP/CHF</option>
+                            <option value="GBPNZD=X">GBP/NZD</option>
+                            <option value="AUDCAD=X">AUD/CAD</option>
+                            <option value="AUDCHF=X">AUD/CHF</option>
+                            <option value="AUDJPY=X">AUD/JPY</option>
+                            <option value="AUDNZD=X">AUD/NZD</option>
+                            <option value="CADJPY=X">CAD/JPY</option>
+                            <option value="CHFJPY=X">CHF/JPY</option>
+                            <option value="NZDJPY=X">NZD/JPY</option>
+                            <option value="NZDCAD=X">NZD/CAD</option>
+                            <option value="NZDCHF=X">NZD/CHF</option>
+                        </optgroup>
+                        <optgroup label="Exotic Pairs">
+                            <option value="EURSGD=X">EUR/SGD</option>
+                            <option value="GBPSGD=X">GBP/SGD</option>
+                            <option value="AUDSGD=X">AUD/SGD</option>
+                            <option value="NZDSGD=X">NZD/SGD</option>
+                            <option value="SGDJPY=X">SGD/JPY</option>
+                        </optgroup>
+                    </select>
+                </div>
+                 <div class="form-group" id="commoditySymbolContainer" style="display: none;">
+                    <label for="commoditySymbol">Commodity</label>
+                    <select id="commoditySymbol">
+                        <option value="GC=F">Gold (GC=F)</option>
+                        <option value="SI=F">Silver (SI=F)</option>
+                        <option value="CL=F">Crude Oil (CL=F)</option>
+                        <option value="NG=F">Natural Gas (NG=F)</option>
+                        <option value="PL=F">Platinum (PL=F)</option>
+                        <option value="HG=F">Copper (HG=F)</option>
+                        <option value="PA=F">Palladium (PA=F)</option>
+                        <option value="BZ=F">Brent Crude Oil (BZ=F)</option>
+                    </select>
+                </div>
+                 <div class="form-group" id="cryptoSymbolContainer" style="display: none;">
+                    <label for="cryptoSymbol">Cryptocurrency</label>
+                    <select id="cryptoSymbol">
+                        <option value="BTC-USD">Bitcoin (BTC)</option>
+                        <option value="ETH-USD">Ethereum (ETH)</option>
+                        <option value="SOL-USD">Solana (SOL)</option>
+                        <option value="XRP-USD">XRP (XRP)</option>
+                        <option value="ADA-USD">Cardano (ADA)</option>
+                        <option value="DOGE-USD">Dogecoin (DOGE)</option>
+                        <option value="AVAX-USD">Avalanche (AVAX)</option>
+                        <option value="SHIB-USD">Shiba Inu (SHIB)</option>
+                        <option value="DOT-USD">Polkadot (DOT)</option>
+                        <option value="MATIC-USD">Polygon (MATIC)</option>
+                        <option value="LTC-USD">Litecoin (LTC)</option>
+                        <option value="BCH-USD">Bitcoin Cash (BCH)</option>
+                    </select>
+                </div>
+                 <div class="form-group" id="customSymbolContainer" style="display: none;">
+                    <label for="customSymbol">Custom Symbol</label>
+                    <input type="text" id="customSymbol" placeholder="e.g., TSLA, BTC-USD, ^GSPC">
+                </div>
+                <div class="form-group">
+                    <label for="interval">Time Interval</label>
+                    <select id="interval">
+                        <option value="1m">1 Minute</option>
+                        <option value="5m">5 Minutes</option>
+                        <option value="15m">15 Minutes</option>
+                        <option value="30m">30 Minutes</option>
+                        <option value="1h" selected>1 Hour</option>
+                        <option value="1d">Daily</option>
+                        <option value="1wk">1 Week</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="period">Data Period</label>
+                    <select id="period">
+                        <option value="5d">5 Days</option>
+                        <option value="1mo" selected>1 Month</option>
+                        <option value="3mo">3 Months</option>
+                        <option value="6mo">6 Months</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="regressionPeriod">Regression Period (Bars)</label>
+                    <input type="number" id="regressionPeriod" value="24" min="10" max="200">
+                </div>
+                
+                <div class="form-group">
+                    <label for="zoneSignalType">Primary Signal Filter</label>
+                    <select id="zoneSignalType">
+                        <option value="all" selected>All Zone Signals (Default)</option>
+                        <option value="breakout">Breakout</option>
+                        <option value="re-entry">Re-entry</option>
+                        <option value="percentage-pullback">Percentage Pullback</option>
+                        <option value="breakout-confirmation">Breakout Confirmation</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="strategyType">Analysis Method</label>
+                    <select id="strategyType">
+                        <option value="both" selected>Both Strategies</option>
+                        <option value="zoneBreakout">Zone Breakout Only</option>
+                        <option value="shiftedZone">Shifted Zone Only</option>
+                    </select>
+                </div>
+                
+                <div id="zoneParams">
+                    <div class="form-group">
+                        <label for="referencePriceType">Reference Price Type</label>
+                        <select id="referencePriceType">
+                            <option value="AUTO_AI_SCORE" selected>🤖 AI Auto-Select (Setup Score)</option>
+                            <option value="AUTO">⚡️ Auto-Select (Best Signal)</option>
+                            <optgroup label="Base References (for Zone Breakout)">
+                                <option value="C">C (End Regression)</option>
+                                <option value="CH">Ch (Upper Channel)</option>
+                                <option value="CL">Cl (Lower Channel)</option>
+                                <option value="CHEAD">Chead (Trend Head)</option>
+                                <option value="CTAIL">Ctail (Trend Tail)</option>
+                            </optgroup>
+                            <optgroup label="Shifted References (for Shifted Zone)">
+                                <option value="C100">C100 (C shifted by 100%)</option>
+                                <option value="CH100">Ch100 (Ch shifted by 100%)</option>
+                                <option value="CL100">Cl100 (Cl shifted by 100%)</option>
+                                <option value="CHEAD100">Chead100 (Chead shifted by 100%)</option>
+                                <option value="CTAIL100">Ctail100 (Ctail shifted by 100%)</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div class="form-group" id="pullbackPercentageContainer" style="display: none;">
+                        <label for="pullbackPercentage">Pullback Level (% of Channel Width)</label>
+                        <input type="number" id="pullbackPercentage" value="12.5" step="0.1" min="0">
+                        <small style="color: var(--text-muted-color); font-size: 0.8rem; margin-top: 5px; display: block;">
+                            Defines a static entry level. Must be less than the hardcoded Trade Zone Threshold.
+                        </small>
+                    </div>
+                </div>
+
+                <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <input type="checkbox" id="mlFilterEnabled" checked style="width: auto;">
+                    <label for="mlFilterEnabled" style="margin-bottom: 0; font-weight: normal;">Enable ML API Filter</label>
+                </div>
+
+                <button class="btn" id="generateBtn" onclick="updateAnalysis()"><i class="fas fa-search me-2"></i>Analyze Selected</button>
+            </div>
+
+            <div class="signals-panel">
+                <h2><i class="fas fa-bolt me-2"></i>Trading Signals</h2>
+                <div id="signalsContainer">
+                    <div class="loading">Loading signals...</div>
+                </div>
+            </div>
+
+            <div class="scanner-panel">
+                <h2 id="scannerTitle"><i class="fas fa-radar me-2"></i>Asset Scanner</h2>
+                
+                <button class="btn" id="scanAssetBtn" onclick="scanCurrentAssetClass()"><i class="fas fa-search-dollar me-2"></i>Scan All Assets</button>
+                
+                <div class="table-responsive" id="scanner-table-container" style="display: none;">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Signal</th>
+                                <th title="AI Setup Quality Score (0-100)">AI Score</th>
+                                <th>Confidence</th>
+                                <th>Strategy</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scan-results-body"></tbody>
+                    </table>
+                </div>
+                <div id="scanner-info-message" class="info-message">Select an asset class and click scan.</div>
+            </div>
+
+            <div class="chart-container">
+                <h2><i class="fas fa-chart-area me-2"></i>Price Chart with Regression Channel</h2>
+                <canvas id="priceChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <script>
+        Chart.defaults.color = '#e0e0e0';
+        let globalBreakoutState = {};
+        let analysisId = 0;
+
+        const TRADE_ZONE_THRESHOLD = 0.375;
+        const TARGET_ZONE_THRESHOLD = 0.875;
+        const LOCAL_CONFIDENCE_WEIGHT = 0.6;
+        const API_CONFIDENCE_WEIGHT = 0.4;
+
+
+        class RegressionChannelAnalyzer {
+            constructor(stateObject = {}) { this.data = []; this.breakoutState = stateObject; }
+            async fetchMarketData(symbol, interval = '1d', period = '1mo') {
+                const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${period}&includePrePost=false`;
+                const proxies = [`https://thingproxy.freeboard.io/fetch/${targetUrl}`, `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`];
+                for (const proxyUrl of proxies) { try { const response = await fetch(proxyUrl); if (!response.ok) throw new Error(`Proxy responded with status: ${response.status}`); const data = await response.json(); if (data.chart.error) throw new Error(`API Error: ${data.chart.error.description}`); const result = data.chart.result[0]; if (!result || !result.timestamp || !result.indicators.quote[0]) { throw new Error('No valid data in API response.'); } const timestamps = result.timestamp; const quote = result.indicators.quote[0]; const adjClose = result.indicators.adjclose ? result.indicators.adjclose[0].adjclose : null; const parsedData = timestamps.map((timestamp, index) => ({ date: new Date(timestamp * 1000), open: quote.open[index], high: quote.high[index], low: quote.low[index], close: adjClose ? adjClose[index] : quote.close[index], volume: quote.volume[index] || 0 })).filter(item => item.open !== null && item.high !== null && item.low !== null && item.close !== null); if (parsedData.length === 0) throw new Error('No valid data points found after parsing.'); this.data = parsedData.sort((a, b) => a.date - b.date); return this.data; } catch (error) { console.warn(`Fetch attempt failed for ${symbol}:`, error.message); } }
+                throw new Error(`All data proxies failed for ${symbol}.`);
+            }
+            calculateRegressionChannel(period) { if (this.data.length < period) { throw new Error(`Insufficient data (${this.data.length} bars found, ${period} needed).`); } const recentData = this.data.slice(-period); let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0; for (let i = 0; i < period; i++) { const x = i; const y = recentData[i].close; sumX += x; sumY += y; sumXY += x * y; sumX2 += x * x; } const n = period; const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX); const intercept = (sumY - slope * sumX) / n; return { slope, intercept, period }; }
+            calculateMaxDevChannel(period) { const baseChannel = this.calculateRegressionChannel(period); const recentData = this.data.slice(-period); let maxDeviation = 0; for (let i = 0; i < period; i++) { const regressionValue = baseChannel.intercept + baseChannel.slope * i; const deviation = Math.abs(recentData[i].close - regressionValue); if (deviation > maxDeviation) maxDeviation = deviation; } const endRegression = baseChannel.intercept + baseChannel.slope * (period - 1); const isUpwardSlope = baseChannel.slope > 0; const C = endRegression; const Ch = endRegression + maxDeviation; const Cl = endRegression - maxDeviation; const Chead = isUpwardSlope ? (endRegression + Ch) / 2 : (endRegression + Cl) / 2; const Ctail = isUpwardSlope ? (endRegression + Cl) / 2 : (endRegression + Ch) / 2; const channelWidth = Ch - Cl; return { ...baseChannel, maxDeviation, channelWidth, isUpwardSlope, C, Ch, Cl, Chead, Ctail, startRegression: baseChannel.intercept, endRegression }; }
+            getSelectedReferencePrice(channelData, type) { switch (type) { case 'C': return channelData.C; case 'CH': return channelData.Ch; case 'CL': return channelData.Cl; case 'CHEAD': return channelData.Chead; case 'CTAIL': return channelData.Ctail; default: return channelData.Chead; } }
+            getSelectedShiftedReferencePrice(channelData, type, currentPrice) { const basePriceName = type.replace('100', ''); const basePrice = channelData[basePriceName]; if (basePrice === undefined) return channelData.C; const priceUp = basePrice + channelData.channelWidth; const priceDown = basePrice - channelData.channelWidth; return Math.abs(currentPrice - priceUp) < Math.abs(currentPrice - priceDown) ? priceUp : priceDown; }
+            calculateZoneBreakoutTradeZones(channelData, referencePrice) { const channelWidth = channelData.channelWidth; return { referencePrice, channelWidth, tradeZoneHigh: referencePrice + channelWidth * TRADE_ZONE_THRESHOLD, tradeZoneLow: referencePrice - channelWidth * TRADE_ZONE_THRESHOLD, positiveTarget: referencePrice + channelWidth * TARGET_ZONE_THRESHOLD, negativeTarget: referencePrice - channelWidth * TARGET_ZONE_THRESHOLD }; }
+            generateZoneBreakoutSignals(channelData, tradeZones, currentPrice) { let signals = []; let buySetupUsed = false, sellSetupUsed = false; if (currentPrice > tradeZones.tradeZoneHigh && channelData.isUpwardSlope && !buySetupUsed) { signals.push({ type: 'BUY', signal: 'BREAKOUT', reason: 'Bullish breakout above trade zone' }); buySetupUsed = true; } if (currentPrice < tradeZones.tradeZoneLow && !channelData.isUpwardSlope && !sellSetupUsed) { signals.push({ type: 'SELL', signal: 'BREAKOUT', reason: 'Bearish breakout below trade zone' }); sellSetupUsed = true; } if (currentPrice <= tradeZones.tradeZoneHigh && currentPrice >= tradeZones.tradeZoneLow) { if (channelData.isUpwardSlope && !buySetupUsed) { signals.push({ type: 'BUY', signal: 'RE-ENTRY', reason: 'Bullish re-entry into trade zone', confidenceModifier: 0.8 }); buySetupUsed = true; } if (!channelData.isUpwardSlope && !sellSetupUsed) { signals.push({ type: 'SELL', signal: 'RE-ENTRY', reason: 'Bearish re-entry into trade zone', confidenceModifier: 0.8 }); sellSetupUsed = true; } } return signals; }
+            generateBreakAndRetestSignals(symbol, channelData, tradeZones, currentPrice) { if (!this.breakoutState[symbol]) { this.breakoutState[symbol] = { status: 'NEUTRAL' }; } let currentStateInfo = this.breakoutState[symbol]; let signals = []; if (channelData.isUpwardSlope) { switch (currentStateInfo.status) { case 'NEUTRAL': if (currentPrice > tradeZones.tradeZoneHigh) { currentStateInfo.status = 'BROKE_HIGH'; } break; case 'BROKE_HIGH': if (currentPrice < tradeZones.tradeZoneHigh && currentPrice > tradeZones.tradeZoneLow) { currentStateInfo.status = 'RETESTING_HIGH'; } else if (currentPrice < tradeZones.tradeZoneLow) { currentStateInfo.status = 'NEUTRAL'; } break; case 'RETESTING_HIGH': if (currentPrice > tradeZones.tradeZoneHigh) { signals.push({type: 'BUY', signal: 'BREAK-RETEST', reason: 'Confirmed breakout after retest.'}); currentStateInfo.status = 'NEUTRAL'; } else if (currentPrice < tradeZones.tradeZoneLow) { currentStateInfo.status = 'NEUTRAL'; } break; } } else { switch (currentStateInfo.status) { case 'NEUTRAL': if (currentPrice < tradeZones.tradeZoneLow) { currentStateInfo.status = 'BROKE_LOW'; } break; case 'BROKE_LOW': if (currentPrice > tradeZones.tradeZoneLow && currentPrice < tradeZones.tradeZoneHigh) { currentStateInfo.status = 'RETESTING_LOW'; } else if (currentPrice > tradeZones.tradeZoneHigh) { currentStateInfo.status = 'NEUTRAL'; } break; case 'RETESTING_LOW': if (currentPrice < tradeZones.tradeZoneLow) { signals.push({type: 'SELL', signal: 'BREAK-RETEST', reason: 'Confirmed breakdown after retest.'}); currentStateInfo.status = 'NEUTRAL'; } else if (currentPrice > tradeZones.tradeZoneHigh) { currentStateInfo.status = 'NEUTRAL'; } break; } } this.breakoutState[symbol] = currentStateInfo; return signals; }
+            generatePullbackSignals(channelData, tradeZones, currentPrice, pullbackPercentage) { if (this.data.length < 5 || (pullbackPercentage / 100) >= TRADE_ZONE_THRESHOLD) return []; const signals = []; const recentBars = this.data.slice(-5); const tolerance = tradeZones.channelWidth * 0.05; if (channelData.isUpwardSlope) { const recentPeak = Math.max(...recentBars.map(b => b.high)); if (recentPeak > tradeZones.tradeZoneHigh) { const targetPullbackPrice = tradeZones.referencePrice + (tradeZones.channelWidth * (pullbackPercentage / 100)); if (currentPrice < recentPeak && Math.abs(currentPrice - targetPullbackPrice) < tolerance) { signals.push({ type: 'BUY', signal: 'PULLBACK', reason: `Bullish pullback to ${pullbackPercentage}% level.`}); } } } else { const recentTrough = Math.min(...recentBars.map(b => b.low)); if (recentTrough < tradeZones.tradeZoneLow) { const targetPullbackPrice = tradeZones.referencePrice - (tradeZones.channelWidth * (pullbackPercentage / 100)); if (currentPrice > recentTrough && Math.abs(currentPrice - targetPullbackPrice) < tolerance) { signals.push({ type: 'SELL', signal: 'PULLBACK', reason: `Bearish pullback to ${pullbackPercentage}% level.`}); } } } return signals; }
+            createZoneBreakoutSignal(baseSignal, price, tradeZones, channelData, strategyName) { const confidenceModifier = baseSignal.confidenceModifier || 1.0; return { type: baseSignal.type, signal: baseSignal.signal, price: price, stopLoss: baseSignal.type === 'BUY' ? tradeZones.tradeZoneLow : tradeZones.tradeZoneHigh, takeProfit: baseSignal.type === 'BUY' ? tradeZones.positiveTarget : tradeZones.negativeTarget, confidence: this.calculateZoneBreakoutConfidence(price, tradeZones, baseSignal.type, channelData) * confidenceModifier, time: new Date(), reason: baseSignal.reason, strategy: strategyName }; }
+            calculateZoneBreakoutConfidence(currentPrice, tradeZones, signalType, channelData) { const channelWidth = tradeZones.channelWidth; if (channelWidth === 0) return 50; const pricePosition = signalType === 'BUY' ? (currentPrice - tradeZones.tradeZoneLow) / channelWidth : (tradeZones.tradeZoneHigh - currentPrice) / channelWidth; let confidence = Math.min(0.95, Math.max(0.4, pricePosition * 0.8 + 0.2)); const trendStrength = Math.abs(channelData.slope / currentPrice * 100); confidence += Math.min(0.15, trendStrength * 0.5); return Math.min(100, Math.round(confidence * 100)); }
+            calculateOptimalReferencePrice(channelData, currentPrice) {
+                const referenceTypes = ['C', 'CH', 'CL', 'CHEAD', 'CTAIL'];
+                let bestResult = { bestReference: 'N/A', confidence: -1, signal: null };
+                for (const refType of referenceTypes) { 
+                    const refPrice = this.getSelectedReferencePrice(channelData, refType); 
+                    const tradeZones = this.calculateZoneBreakoutTradeZones(channelData, refPrice); 
+                    const signals = this.generateZoneBreakoutSignals(channelData, tradeZones, currentPrice).map(s => this.createZoneBreakoutSignal(s, currentPrice, tradeZones, channelData, 'ZB')); 
+                    if (signals.length > 0) { 
+                        const topSignal = signals.reduce((max, s) => s.confidence > (max.confidence || -1) ? s : max, { confidence: -1 }); 
+                        if (topSignal.confidence > bestResult.confidence) { 
+                            bestResult = { bestReference: refType, confidence: topSignal.confidence, signal: topSignal }; 
+                        } 
+                    } 
+                } 
+                return bestResult;
+            }
+            calculateOptimalShiftedReferencePrice(channelData, currentPrice) { 
+                const baseRefTypes = ['C', 'Ch', 'Cl', 'CHEAD', 'CTAIL']; 
+                let bestResult = { bestReference: 'N/A', confidence: -1, signal: null }; 
+                for (const baseRefType of baseRefTypes) { 
+                    const basePrice = channelData[baseRefType]; 
+                    const shiftedPricesToTest = [ { price: basePrice + channelData.channelWidth, name: `${baseRefType}100+` }, { price: basePrice - channelData.channelWidth, name: `${baseRefType}100-` } ]; 
+                    for (const shiftedRef of shiftedPricesToTest) { 
+                        const tradeZones = this.calculateZoneBreakoutTradeZones(channelData, shiftedRef.price); 
+                        const signals = this.generateZoneBreakoutSignals(channelData, tradeZones, currentPrice).map(s => this.createZoneBreakoutSignal(s, currentPrice, tradeZones, channelData, 'SZB')); 
+                        if (signals.length > 0) { 
+                            const topSignal = signals.reduce((max, s) => s.confidence > (max.confidence || -1) ? s : max, { confidence: -1 }); 
+                            if (topSignal.confidence > bestResult.confidence) { 
+                                bestResult = { bestReference: shiftedRef.name, confidence: topSignal.confidence, signal: topSignal, refPrice: shiftedRef.price }; 
+                            } 
+                        } 
+                    } 
+                } 
+                return bestResult; 
+            }
+        
+            // FIX: Add a guard clause to prevent division by zero on flat channels.
+            calculateReferencePointScore(refType, refPrice, tradeZones, currentPrice, channelData) {
+                let score = {
+                    volatilityScore: 0, trendAlignmentScore: 0, proximityScore: 0,
+                    channelPositionScore: 0, riskRewardScore: 0, totalScore: 0
+                };
+                const channelWidth = channelData.channelWidth;
+
+                if (!channelWidth || channelWidth <= 0) {
+                    return score;
+                }
+                
+                const priceRange = Math.max(...this.data.slice(-20).map(d => d.high)) - Math.min(...this.data.slice(-20).map(d => d.low));
+                const volatilityRatio = priceRange > 0 ? channelWidth / priceRange : 0;
+                score.volatilityScore = Math.min(100, volatilityRatio * 200);
+                const trendStrength = Math.abs(channelData.slope / currentPrice * 1000);
+                if (channelData.isUpwardSlope) {
+                    if (refType === 'CL' || refType === 'CTAIL') score.trendAlignmentScore = 80;
+                    else if (refType === 'C') score.trendAlignmentScore = 60;
+                    else score.trendAlignmentScore = 40;
+                } else {
+                    if (refType === 'CH' || refType === 'CHEAD') score.trendAlignmentScore = 80;
+                    else if (refType === 'C') score.trendAlignmentScore = 60;
+                    else score.trendAlignmentScore = 40;
+                }
+                score.trendAlignmentScore *= Math.min(1, trendStrength);
+                const priceDistance = refPrice > 0 ? Math.abs(currentPrice - refPrice) / refPrice : 0;
+                score.proximityScore = Math.max(0, 100 - priceDistance * 500);
+                const channelPosition = (refPrice - channelData.Cl) / channelWidth;
+                if (channelPosition >= 0.3 && channelPosition <= 0.7) score.channelPositionScore = 90;
+                else if (channelPosition >= 0.2 && channelPosition <= 0.8) score.channelPositionScore = 70;
+                else score.channelPositionScore = 40;
+                
+                let potentialReward, potentialRisk;
+                if (channelData.isUpwardSlope) {
+                    potentialReward = Math.abs(tradeZones.positiveTarget - currentPrice);
+                    potentialRisk = Math.abs(currentPrice - tradeZones.tradeZoneLow);
+                } else {
+                    potentialReward = Math.abs(currentPrice - tradeZones.negativeTarget);
+                    potentialRisk = Math.abs(tradeZones.tradeZoneHigh - currentPrice);
+                }
+                const riskRewardRatio = potentialRisk > 0 ? potentialReward / potentialRisk : 0;
+                score.riskRewardScore = Math.min(100, riskRewardRatio * 25);
+                
+                score.totalScore = (
+                    score.volatilityScore * 0.2 +
+                    score.trendAlignmentScore * 0.3 +
+                    score.proximityScore * 0.15 +
+                    score.channelPositionScore * 0.2 +
+                    score.riskRewardScore * 0.15
+                );
+                return score;
+            }
+
+            autoSelectBestReferenceByScore(channelData, currentPrice) {
+                const referenceTypes = ['C', 'CH', 'CL', 'CHEAD', 'CTAIL'];
+                let evaluationResults = {};
+                for (const refType of referenceTypes) {
+                    const refPrice = this.getSelectedReferencePrice(channelData, refType);
+                    const tempTradeZones = this.calculateZoneBreakoutTradeZones(channelData, refPrice);
+                    const score = this.calculateReferencePointScore(refType, refPrice, tempTradeZones, currentPrice, channelData);
+                    evaluationResults[refType] = score;
+                }
+
+                const validKeys = Object.keys(evaluationResults);
+                if (validKeys.length === 0) {
+                    return { bestReference: 'N/A', score: 0 }; 
+                }
+
+                const bestRefName = validKeys.reduce((a, b) => 
+                    evaluationResults[a].totalScore > evaluationResults[b].totalScore ? a : b
+                );
+                // FIX: More descriptive console log
+                console.log(`AI Setup Scoring Results for ${bestRefName}:`, evaluationResults);
+                
+                return {
+                    bestReference: bestRefName,
+                    score: evaluationResults[bestRefName].totalScore
+                };
+            }
+        }
+
+        let priceChart = null;
+        async function fetchApiSignal(symbol, timeframe) { const apiSymbol = symbol.replace(/=X|=F/g, ''); const apiUrl = `https://ultimateedge.onrender.com/api/generate_signal?symbol=${encodeURIComponent(apiSymbol)}&timeframe=${timeframe}`; try { const controller = new AbortController(); const timeoutId = setTimeout(() => controller.abort(), 8000); const response = await fetch(apiUrl, { signal: controller.signal }); clearTimeout(timeoutId); if (!response.ok) { return { error: `API request failed: ${response.statusText}` }; } return await response.json(); } catch (error) { return { error: error.name === 'AbortError' ? 'API request timed out' : error.message }; } }
+        function updateAssetControls() { const assetType = document.getElementById('assetType').value; document.getElementById('stockSymbolContainer').style.display = assetType === 'STOCKS' ? 'block' : 'none'; document.getElementById('forexSymbolContainer').style.display = assetType === 'FOREX' ? 'block' : 'none'; document.getElementById('commoditySymbolContainer').style.display = assetType === 'COMMODITIES' ? 'block' : 'none'; document.getElementById('cryptoSymbolContainer').style.display = assetType === 'CRYPTO' ? 'block' : 'none'; document.getElementById('customSymbolContainer').style.display = assetType === 'CUSTOM' ? 'block' : 'none'; const scanBtn = document.getElementById('scanAssetBtn'); const scannerTitle = document.querySelector('#scannerTitle'); if (assetType === 'CUSTOM') { scanBtn.disabled = true; scanBtn.innerHTML = `<i class="fas fa-ban me-2"></i>Scan Not Available`; scannerTitle.innerHTML = `<i class="fas fa-radar me-2"></i>Asset Scanner`; } else { scanBtn.disabled = false; const assetName = document.querySelector(`#assetType option[value=${assetType}]`).textContent; scanBtn.innerHTML = `<i class="fas fa-search-dollar me-2"></i>Scan All ${assetName}`; scannerTitle.innerHTML = `<i class="fas fa-radar me-2"></i>${assetName} Confidence Scanner`; } }
+        function togglePullbackInput() { const signalType = document.getElementById('zoneSignalType').value; const pullbackContainer = document.getElementById('pullbackPercentageContainer'); pullbackContainer.style.display = (signalType === 'percentage-pullback') ? 'block' : 'none'; }
+        function getSelectedSymbol() { const assetType = document.getElementById('assetType').value; switch (assetType) { case 'STOCKS': return document.getElementById('stockSymbol').value; case 'FOREX': return document.getElementById('forexSymbol').value; case 'COMMODITIES': return document.getElementById('commoditySymbol').value; case 'CRYPTO': return document.getElementById('cryptoSymbol').value; case 'CUSTOM': return document.getElementById('customSymbol').value.trim().toUpperCase(); default: return document.getElementById('stockSymbol').value; } }
+        function formatPrice(price) { if (typeof price !== 'number' || !isFinite(price)) return 'N/A'; return price > 10 ? price.toFixed(2) : price.toPrecision(4); }
+        async function analyzeScannedPair(symbol, assetType) { document.getElementById('assetType').value = assetType; updateAssetControls(); const symbolSelectId = assetType.toLowerCase() + 'Symbol'; const symbolSelect = document.getElementById(symbolSelectId); if (symbolSelect && [...symbolSelect.options].some(option => option.value === symbol)) { symbolSelect.value = symbol; } else { document.getElementById('assetType').value = 'CUSTOM'; updateAssetControls(); document.getElementById('customSymbol').value = symbol; } await updateAnalysis(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+        
+        async function performSignalAnalysis(analyzer, symbol, strategyType, zoneSignalType, pullbackPercentage, referencePriceTypeOverride = null) {
+            const currentPrice = analyzer.data[analyzer.data.length - 1].close;
+            const channelData = analyzer.calculateMaxDevChannel(parseInt(document.getElementById('regressionPeriod').value));
+            
+            const referencePriceType = referencePriceTypeOverride || document.getElementById('referencePriceType').value;
+            let referencePrice;
+            let chosenRefForUI = null;
+            let aiSetupScore = 0;
+
+            if (referencePriceType === 'AUTO_AI_SCORE' && strategyType === 'zoneBreakout') {
+                const { bestReference, score } = analyzer.autoSelectBestReferenceByScore(channelData, currentPrice);
+                referencePrice = analyzer.getSelectedReferencePrice(channelData, bestReference);
+                chosenRefForUI = bestReference;
+                aiSetupScore = score;
+            } else if (referencePriceType.startsWith('AUTO')) {
+                const optimal = strategyType === 'zoneBreakout'
+                    ? analyzer.calculateOptimalReferencePrice(channelData, currentPrice)
+                    : analyzer.calculateOptimalShiftedReferencePrice(channelData, currentPrice);
+                
+                if (optimal.signal) {
+                    referencePrice = strategyType === 'zoneBreakout'
+                        ? analyzer.getSelectedReferencePrice(channelData, optimal.bestReference)
+                        : optimal.refPrice;
+                } else {
+                    referencePrice = strategyType === 'zoneBreakout'
+                        ? analyzer.getSelectedReferencePrice(channelData, 'CHEAD')
+                        : analyzer.getSelectedShiftedReferencePrice(channelData, 'C100', currentPrice);
+                }
+            } else {
+                referencePrice = strategyType === 'zoneBreakout'
+                    ? analyzer.getSelectedReferencePrice(channelData, referencePriceType)
+                    : analyzer.getSelectedShiftedReferencePrice(channelData, referencePriceType, currentPrice);
+            }
+            
+            const tradeZones = analyzer.calculateZoneBreakoutTradeZones(channelData, referencePrice);
+            let baseSignals = [];
+            const strategyName = strategyType === 'zoneBreakout' ? 'ZB' : 'SZB';
+
+            switch (zoneSignalType) {
+                case 'all': baseSignals = analyzer.generateZoneBreakoutSignals(channelData, tradeZones, currentPrice); break;
+                case 'breakout': baseSignals = analyzer.generateZoneBreakoutSignals(channelData, tradeZones, currentPrice).filter(s => s.signal === 'BREAKOUT'); break;
+                case 're-entry': baseSignals = analyzer.generateZoneBreakoutSignals(channelData, tradeZones, currentPrice).filter(s => s.signal === 'RE-ENTRY'); break;
+                case 'percentage-pullback': baseSignals = analyzer.generatePullbackSignals(channelData, tradeZones, currentPrice, pullbackPercentage); break;
+                case 'breakout-confirmation': baseSignals = analyzer.generateBreakAndRetestSignals(symbol, channelData, tradeZones, currentPrice); break;
+            }
+            
+            const signals = baseSignals.map(s => analyzer.createZoneBreakoutSignal(s, currentPrice, tradeZones, channelData, strategyName));
+            
+            return { signals, tradeZones, channelData, chosenRefForUI, aiSetupScore };
+        }
+        
+        async function updateAnalysis() {
+            analysisId++;
+            const currentAnalysisId = analysisId;
+
+            const generateBtn = document.getElementById('generateBtn');
+            const symbol = getSelectedSymbol();
+            
+            if (symbol && globalBreakoutState[symbol]) {
+                delete globalBreakoutState[symbol];
+            }
+
+            generateBtn.disabled = true;
+            generateBtn.innerHTML = '<div class="loading" style="padding:0; color:white;">Analyzing...</div>';
+            
+            try {
+                document.getElementById('signalsContainer').innerHTML = '<div class="loading">Analyzing market data...</div>';
+                if(priceChart) priceChart.destroy();
+                
+                if (!symbol) throw new Error('Please select or enter a symbol.');
+
+                const interval = document.getElementById('interval').value;
+                const period = document.getElementById('period').value;
+                const strategyType = document.getElementById('strategyType').value;
+                const zoneSignalType = document.getElementById('zoneSignalType').value;
+                const pullbackPercentage = parseFloat(document.getElementById('pullbackPercentage').value);
+                const mlFilterEnabled = document.getElementById('mlFilterEnabled').checked;
+
+                const analyzer = new RegressionChannelAnalyzer(globalBreakoutState);
+                await analyzer.fetchMarketData(symbol, interval, period);
+                
+                if (currentAnalysisId !== analysisId) { console.log("Analysis cancelled, a newer one is running."); return; }
+
+                let allFoundSignals = [];
+                let analysisResults = {};
+
+                if (strategyType === 'both' || strategyType === 'zoneBreakout') {
+                    const result = await performSignalAnalysis(analyzer, symbol, 'zoneBreakout', zoneSignalType, pullbackPercentage);
+                    allFoundSignals.push(...result.signals);
+                    analysisResults['zoneBreakout'] = result;
+                }
+                if (strategyType === 'both' || strategyType === 'shiftedZone') {
+                    const result = await performSignalAnalysis(analyzer, symbol, 'shiftedZone', zoneSignalType, pullbackPercentage);
+                    allFoundSignals.push(...result.signals);
+                    analysisResults['shiftedZone'] = result;
+                }
+                
+                let bestSignal = null;
+                if(allFoundSignals.length > 0) {
+                    bestSignal = allFoundSignals.sort((a,b) => b.confidence - a.confidence)[0];
+                }
+
+                // FIX: Robust fallback for chart data source to prevent crash on edge cases.
+                const chartDataStrategy = bestSignal ? (bestSignal.strategy === 'ZB' ? 'zoneBreakout' : 'shiftedZone') : 'zoneBreakout';
+                const chartDataSource = analysisResults[chartDataStrategy] || Object.values(analysisResults)[0] || { tradeZones: null, channelData: null };
+                const { tradeZones, channelData } = chartDataSource;
+                
+                if (!channelData) {
+                    throw new Error("Could not generate analysis data for the chart.");
+                }
+
+                let signalsToDisplay = allFoundSignals;
+                
+                if (mlFilterEnabled && signalsToDisplay.length > 0) {
+                    document.getElementById('signalsContainer').innerHTML = '<div class="loading">Confirming with ML API...</div>';
+                    const apiResult = await fetchApiSignal(symbol, interval);
+                    
+                    if (currentAnalysisId !== analysisId) { console.log("Analysis cancelled, a newer one is running."); return; }
+                    
+                    signalsToDisplay = signalsToDisplay.map(localSignal => {
+                        const combinedSignal = { ...localSignal };
+                        if (apiResult && !apiResult.error) {
+                            combinedSignal.apiSignal = apiResult.signal;
+                            combinedSignal.apiConfidence = apiResult.confidence;
+                            combinedSignal.apiStrategy = apiResult.strategy;
+                            const isConflict = localSignal.type.toUpperCase() !== apiResult.signal.toUpperCase() && apiResult.signal.toUpperCase() !== 'NEUTRAL';
+                            let combined = (localSignal.confidence * LOCAL_CONFIDENCE_WEIGHT) + (apiResult.confidence * API_CONFIDENCE_WEIGHT);
+                            if (isConflict) { combined /= 2; }
+                            combinedSignal.combinedConfidence = Math.round(combined);
+                        } else {
+                            combinedSignal.apiSignal = 'N/A';
+                            combinedSignal.apiConfidence = 0;
+                            combinedSignal.apiStrategy = apiResult ? apiResult.error : 'Request Failed';
+                            combinedSignal.combinedConfidence = localSignal.confidence;
+                        }
+                        return combinedSignal;
+                    });
+                }
+                
+                if (currentAnalysisId === analysisId) {
+                    const uiFeedbackRef = (analysisResults['zoneBreakout'] && analysisResults['zoneBreakout'].chosenRefForUI) 
+                        ? analysisResults['zoneBreakout'].chosenRefForUI 
+                        : null;
+                    updateSignalsUI(signalsToDisplay, symbol, uiFeedbackRef);
+                    updateChart(symbol, analyzer.data, channelData, tradeZones);
+                }
+
+            } catch (error) {
+                console.error("Analysis failed:", error);
+                if (currentAnalysisId === analysisId) {
+                    document.getElementById('signalsContainer').innerHTML = `<div class="error">${error.message}</div>`;
+                    if(priceChart) priceChart.destroy();
+                }
+            } finally {
+                if (currentAnalysisId === analysisId) {
+                    generateBtn.disabled = false;
+                    generateBtn.innerHTML = '<i class="fas fa-search me-2"></i>Analyze Selected';
+                }
+            }
+        }
+
+        function updateSignalsUI(signals, symbol, chosenRef = null) {
+            const container = document.getElementById('signalsContainer');
+            if (signals.length === 0) {
+                container.innerHTML = `<div class="success">Analysis complete for ${symbol}. No new trading signals generated based on the selected filters.</div>`;
+                return;
+            }
+            container.innerHTML = signals.map(s => {
+                const hasApiData = s.apiSignal && s.apiSignal !== 'N/A';
+                const isApiError = s.apiSignal === 'N/A';
+                let apiHtml = '';
+
+                if (document.getElementById('mlFilterEnabled').checked) {
+                    if (isApiError) {
+                        apiHtml = `<div class="detail-item" style="grid-column: 1 / -1; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-color);"><span class="detail-label" style="color: var(--neutral-color);">ML Filter</span><span class="detail-value" style="font-size: 0.8rem;">${s.apiStrategy}</span></div>`;
+                    } else if (hasApiData) {
+                        const isConflict = s.type.toUpperCase() !== s.apiSignal.toUpperCase() && s.apiSignal.toUpperCase() !== 'NEUTRAL';
+                        const icon = isConflict ? '✖' : '✔';
+                        const color = isConflict ? 'var(--sell-color)' : 'var(--buy-color)';
+                        const title = isConflict ? 'ML Conflict' : 'ML Confirmation';
+
+                        apiHtml = `
+                            <div style="grid-column: 1 / -1; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-color);">
+                                <div class="detail-item">
+                                    <span class="detail-label">Local Confidence:</span> 
+                                    <span class="detail-value">${s.confidence.toFixed(1)}%</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-label" style="color: ${color};">${title} <b style="color:${color};">${icon}</b></span> 
+                                    <span class="detail-value">${s.apiSignal} (${s.apiConfidence.toFixed(1)}%)</span>
+                                </div>
+                                 <div class="detail-item" style="font-size: 0.8rem;">
+                                    <span class="detail-label">ML Strategy:</span>
+                                    <span class="detail-value">${s.apiStrategy}</span>
+                                </div>
+                            </div>`;
+                    }
+                }
+
+                const confidenceLabel = hasApiData && !isApiError ? "Combined Confidence" : "Confidence";
+                const confidenceToShow = hasApiData && !isApiError ? s.combinedConfidence : s.confidence;
+                
+                let refFeedbackHtml = '';
+                if (chosenRef && s.strategy === 'ZB' && document.getElementById('referencePriceType').value === 'AUTO_AI_SCORE') {
+                    refFeedbackHtml = `<span class="scanner-strategy-tag" style="background-color: #3a7bd5;" title="Reference price chosen by AI setup scoring model">AI PICK: ${chosenRef}</span>`;
+                }
+
+                return `<div class="signal-card ${s.type.toLowerCase()}">
+                    <div class="signal-header">
+                        <span class="signal-type">${s.type} ${s.signal} for ${symbol}</span>
+                        <div>
+                            ${refFeedbackHtml}
+                            <span class="scanner-strategy-tag">${s.strategy}</span>
+                        </div>
+                    </div>
+                    <p>${s.reason || ''}</p>
+                    <div class="signal-details">
+                        <div class="detail-item"><span class="detail-label">Entry Price:</span> <span class="detail-value">${formatPrice(s.price)}</span></div>
+                        <div class="detail-item"><span class="detail-label">Take Profit:</span> <span class="detail-value">${formatPrice(s.takeProfit)}</span></div>
+                        <div class="detail-item"><span class="detail-label">Stop Loss:</span> <span class="detail-value">${formatPrice(s.stopLoss)}</span></div>
+                        <div class="detail-item" style="background-color: rgba(0,0,0,0.2); padding: 5px; border-radius: 5px; grid-column: 1 / -1;">
+                            <span class="detail-label">${confidenceLabel}:</span> 
+                            <span class="detail-value">${confidenceToShow.toFixed(1)}%</span>
+                        </div>
+                        ${apiHtml}
+                    </div>
+                </div>`
+            }).join('');
+        }
+
+        function updateChart(symbol, data, channelData, tradeZones) {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            if (priceChart) priceChart.destroy();
+            const regressionData = data.slice(-channelData.period);
+            const regressionLabels = regressionData.map(d => d.date);
+            const regressionLine = regressionLabels.map((_, i) => ({ x: regressionLabels[i].getTime(), y: channelData.intercept + channelData.slope * i }));
+            const upperChannel = regressionLine.map(p => ({ x: p.x, y: p.y + channelData.maxDeviation }));
+            const lowerChannel = regressionLine.map(p => ({ x: p.x, y: p.y - channelData.maxDeviation }));
+            let datasets = [
+                { label: `${symbol} Close Price`, data: data.map(d => ({x: d.date.getTime(), y: d.close})), borderColor: '#3a7bd5', borderWidth: 2, pointRadius: 0, tension: 0.1 },
+                { label: 'Regression Line', data: regressionLine, borderColor: '#ffc107', borderWidth: 2, pointRadius: 0, borderDash: [5, 5] },
+                { label: 'Max Dev Channel', data: upperChannel, borderColor: 'rgba(204, 204, 204, 0.4)', borderWidth: 1, pointRadius: 0 },
+                { label: 'Lower Channel', data: lowerChannel, borderColor: 'rgba(204, 204, 204, 0.4)', borderWidth: 1, pointRadius: 0, fill: '-1', backgroundColor: 'rgba(204, 204, 204, 0.05)'},
+            ];
+            if (tradeZones) {
+                datasets.push(
+                    { label: 'Trade Zone High', data: [{x: regressionLabels[0].getTime(), y: tradeZones.tradeZoneHigh}, {x: regressionLabels[regressionLabels.length - 1].getTime(), y: tradeZones.tradeZoneHigh}], borderColor: 'rgba(76, 175, 80, 0.7)', borderWidth: 2, pointRadius: 0, borderDash: [2, 2] },
+                    { label: 'Trade Zone Low', data: [{x: regressionLabels[0].getTime(), y: tradeZones.tradeZoneLow}, {x: regressionLabels[regressionLabels.length - 1].getTime(), y: tradeZones.tradeZoneLow}], borderColor: 'rgba(244, 67, 54, 0.7)', borderWidth: 2, pointRadius: 0, borderDash: [2, 2] },
+                    { label: 'Reference Price', data: [{x: regressionLabels[0].getTime(), y: tradeZones.referencePrice}, {x: regressionLabels[regressionLabels.length - 1].getTime(), y: tradeZones.referencePrice}], borderColor: 'rgba(58, 123, 213, 0.9)', borderWidth: 2, pointRadius: 0, borderDash: [8, 4] }
+                );
+            }
+            priceChart = new Chart(ctx, { type: 'line', data: { datasets }, options: { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'time', time: { tooltipFormat: 'dd MMM yyyy HH:mm' }, ticks: { source: 'auto', maxRotation: 0, autoSkip: true, color: 'var(--text-muted-color)' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } }, y: { ticks: { callback: (value) => formatPrice(value), color: 'var(--text-muted-color)' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } } }, plugins: { legend: { labels: { usePointStyle: true, filter: (item) => item.text !== 'Lower Channel' } }, tooltip: { mode: 'index', intersect: false } }, interaction: { mode: 'nearest', axis: 'x', intersect: false } } });
+        }
+        
+        async function scanCurrentAssetClass() {
+            const scanBtn = document.getElementById('scanAssetBtn');
+            const tableContainer = document.getElementById('scanner-table-container');
+            const infoMessage = document.getElementById('scanner-info-message');
+            scanBtn.disabled = true;
+            
+            try {
+                tableContainer.style.display = 'none';
+                infoMessage.style.display = 'block';
+                infoMessage.innerHTML = '<div class="loading">Initializing scan...</div>';
+                const assetType = document.getElementById('assetType').value;
+                if (assetType === 'CUSTOM') return;
+                const assetsToScan = Array.from(document.getElementById(assetType.toLowerCase() + 'Symbol').options).map(opt => ({ value: opt.value, text: opt.text }));
+                const interval = document.getElementById('interval').value;
+                const period = document.getElementById('period').value;
+                const regressionPeriod = parseInt(document.getElementById('regressionPeriod').value);
+
+                assetsToScan.forEach(asset => {
+                    if (globalBreakoutState[asset.value]) {
+                        delete globalBreakoutState[asset.value];
+                    }
+                });
+
+                const strategyToScan = document.getElementById('strategyType').value;
+                const signalTypeToScan = document.getElementById('zoneSignalType').value;
+                const pullbackPercentage = parseFloat(document.getElementById('pullbackPercentage').value);
+                const mlFilterEnabled = document.getElementById('mlFilterEnabled').checked;
+
+                const scannerReferencePriceType = 'AUTO_AI_SCORE';
+
+                let completed = 0;
+                const total = assetsToScan.length;
+                scanBtn.innerHTML = `<div class="loading" style="padding:0; color:white;">Scanning... (0/${total})</div>`;
+                
+                const promises = assetsToScan.map(asset => {
+                    return (async () => {
+                        const pairAnalyzer = new RegressionChannelAnalyzer({});
+                        let result;
+                        try {
+                            await pairAnalyzer.fetchMarketData(asset.value, interval, period);
+                            if (pairAnalyzer.data.length < regressionPeriod) { 
+                                return { pair: asset.text, value: asset.value, signal: 'INSUFFICIENT DATA', confidence: 0, strategy: 'N/A', aiSetupScore: 0 }; 
+                            }
+
+                            let foundSignals = [];
+                            let aiSetupScore = 0;
+
+                            if (strategyToScan === 'both' || strategyToScan === 'zoneBreakout') {
+                                const zbResult = await performSignalAnalysis(pairAnalyzer, asset.value, 'zoneBreakout', signalTypeToScan, pullbackPercentage, scannerReferencePriceType);
+                                foundSignals.push(...zbResult.signals);
+                                aiSetupScore = zbResult.aiSetupScore;
+                            }
+                            
+                            if (strategyToScan === 'both' || strategyToScan === 'shiftedZone') {
+                                const szbResult = await performSignalAnalysis(pairAnalyzer, asset.value, 'shiftedZone', signalTypeToScan, pullbackPercentage, scannerReferencePriceType);
+                                foundSignals.push(...szbResult.signals);
+                            }
+                            
+                            if (foundSignals.length > 0) {
+                                const bestSignal = foundSignals.sort((a,b) => b.confidence - a.confidence)[0];
+                                result = { pair: asset.text, value: asset.value, signal: bestSignal.type, confidence: bestSignal.confidence, strategy: bestSignal.strategy, aiSetupScore: aiSetupScore };
+                            } else {
+                                result = { pair: asset.text, value: asset.value, signal: 'NEUTRAL', confidence: 10, strategy: 'N/A', aiSetupScore: aiSetupScore };
+                            }
+                        } catch (error) {
+                            result = { pair: asset.text, value: asset.value, signal: 'ERROR', confidence: 0, strategy: 'N/A', aiSetupScore: 0 };
+                        }
+                        
+                        if (mlFilterEnabled && result.signal !== 'ERROR' && result.signal !== 'INSUFFICIENT DATA' && result.signal !== 'NEUTRAL') {
+                            const apiResult = await fetchApiSignal(asset.value, interval);
+                            if (apiResult && !apiResult.error) {
+                                result.apiSignal = apiResult.signal;
+                                result.isConflict = result.signal.toUpperCase() !== apiResult.signal.toUpperCase() && apiResult.signal.toUpperCase() !== 'NEUTRAL';
+                                let combined = (result.confidence * LOCAL_CONFIDENCE_WEIGHT) + (apiResult.confidence * API_CONFIDENCE_WEIGHT);
+                                if (result.isConflict) { combined /= 2; }
+                                result.combinedConfidence = Math.round(combined);
+                            }
+                        }
+                        if (result.combinedConfidence === undefined) { result.combinedConfidence = result.confidence; }
+                        
+                        completed++;
+                        scanBtn.innerHTML = `<div class="loading" style="padding:0; color:white;">Scanning... (${completed}/${total})</div>`;
+                        return result;
+                    })();
+                });
+                const allResults = (await Promise.all(promises)).sort((a, b) => b.aiSetupScore - a.aiSetupScore);
+                renderScannerResults(allResults, assetType);
+            } finally {
+                scanBtn.disabled = false;
+                updateAssetControls(); 
+            }
+        }
+
+        function renderScannerResults(results, assetType) {
+            const tableContainer = document.getElementById('scanner-table-container');
+            const tableBody = document.getElementById('scan-results-body');
+            const infoMessage = document.getElementById('scanner-info-message');
+            if (!results || results.length === 0) { tableContainer.style.display = 'none'; infoMessage.style.display = 'block'; infoMessage.textContent = 'Scan complete. No significant opportunities found for the selected criteria.'; return; }
+            infoMessage.style.display = 'none'; tableContainer.style.display = 'block';
+            tableBody.innerHTML = results.map(res => {
+                const signal = res.signal.toUpperCase().replace(/\s+/g, '-');
+                let badgeClass = 'bg-secondary';
+                if (signal === 'BUY') badgeClass = 'bg-buy'; else if (signal === 'SELL') badgeClass = 'bg-sell'; else if (signal === 'NEUTRAL') badgeClass = 'bg-neutral';
+                const confidenceToUse = res.combinedConfidence !== undefined ? res.combinedConfidence : res.confidence;
+                let apiIndicatorHtml = '';
+                if (res.apiSignal && res.apiSignal !== 'N/A') {
+                    let icon = '—'; let title = `ML Signal: ${res.apiSignal}`; let color = 'var(--text-muted-color)';
+                    if (res.isConflict) { icon = '✖'; title = `ML Signal (${res.apiSignal}) conflicts with Local (${res.signal})`; color = 'var(--sell-color)'; } 
+                    else if (res.apiSignal.toUpperCase() === res.signal.toUpperCase()) { icon = '✔'; title = `ML Signal (${res.apiSignal}) confirms Local Signal`; color = 'var(--buy-color)'; }
+                    apiIndicatorHtml = `<span title="${title}" style="color: ${color}; font-weight: bold; margin-right: 8px;">${icon}</span>`;
+                }
+                
+                const aiScoreCell = `<td>${(res.aiSetupScore || 0).toFixed(1)}%</td>`;
+
+                return `<tr style="cursor: pointer;" onclick="analyzeScannedPair('${res.value}', '${assetType}')" title="Click to analyze ${res.pair}">
+                            <td>${apiIndicatorHtml}${res.pair}</td>
+                            <td><span class="badge ${badgeClass}">${signal}</span></td>
+                            ${aiScoreCell}
+                            <td>${confidenceToUse.toFixed(1)}%</td>
+                            <td>${res.strategy !== 'N/A' ? res.strategy : '—'}</td>
+                            <td><button class="btn-action" onclick="event.stopPropagation(); analyzeScannedPair('${res.value}', '${assetType}')">Analyze</button></td>
+                        </tr>`;
+            }).join('');
+        }
+        
+        function filterReferenceOptions() {
+            const strategy = document.getElementById('strategyType').value;
+            const refSelect = document.getElementById('referencePriceType');
+            refSelect.querySelector('optgroup[label^="Base"]').style.display = (strategy === 'zoneBreakout' || strategy === 'both') ? 'block' : 'none';
+            refSelect.querySelector('optgroup[label^="Shifted"]').style.display = (strategy === 'shiftedZone' || strategy === 'both') ? 'block' : 'none';
+        }
+        
+        function handleIntervalChange() {
+            const interval = document.getElementById('interval').value;
+            const periodSelect = document.getElementById('period');
+            const isShortTerm = interval === '1m' || interval === '5m';
+            for (const option of periodSelect.options) {
+                const isLongPeriod = option.value === '3mo' || option.value === '6mo';
+                option.disabled = isShortTerm && isLongPeriod;
+            }
+            if (isShortTerm && periodSelect.selectedOptions[0].disabled) {
+                periodSelect.value = '5d';
+            }
+        }
+        
+        function validatePullbackInput() {
+            const pullbackInput = document.getElementById('pullbackPercentage');
+            if (pullbackInput.offsetParent === null) return;
+            const pullbackValue = parseFloat(pullbackInput.value) || 0;
+            if ((pullbackValue / 100) >= TRADE_ZONE_THRESHOLD) {
+                pullbackInput.style.borderColor = 'var(--sell-color)';
+                pullbackInput.style.boxShadow = '0 0 0 3px rgba(244, 67, 54, 0.2)';
+            } else {
+                pullbackInput.style.borderColor = '';
+                pullbackInput.style.boxShadow = '';
+            }
+        }
+        
+        // FIX: Create a function to set the initial UI state without running an analysis.
+        function initializeUI() {
+            if (priceChart) {
+                priceChart.destroy();
+            }
+            document.getElementById('signalsContainer').innerHTML = '<div class="info-message">Select trading parameters and click "Analyze Selected" to generate signals.</div>';
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        }
+
+        window.onload = () => {
+            document.getElementById('assetType').addEventListener('change', updateAssetControls);
+            document.getElementById('interval').addEventListener('change', handleIntervalChange);
+            document.getElementById('zoneSignalType').addEventListener('change', () => {
+                togglePullbackInput();
+                validatePullbackInput();
+            });
+            document.getElementById('strategyType').addEventListener('change', filterReferenceOptions);
+            
+            const pullbackInput = document.getElementById('pullbackPercentage');
+            const savedPullback = localStorage.getItem('userPullbackPercentage');
+            if (savedPullback) { pullbackInput.value = savedPullback; }
+            pullbackInput.addEventListener('change', () => { localStorage.setItem('userPullbackPercentage', pullbackInput.value); });
+            pullbackInput.addEventListener('input', validatePullbackInput);
+            
+            updateAssetControls();
+            togglePullbackInput();
+            handleIntervalChange();
+            filterReferenceOptions();
+            validatePullbackInput();
+            // Call the new initialization function instead of running a full analysis on load.
+            initializeUI();
+        };
+
+    </script>
+</body>
+</html>
